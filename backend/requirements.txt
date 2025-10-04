@@ -1,0 +1,20 @@
+# FastAPI dependencies
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+
+pandas
+openpyxl
+langchain
+langchain-openai
+langchain-experimental
+
+# security and validation
+pydantic
+
+# CORS and middleware
+starlette
+
+# Logging and monitoring
+structlog
