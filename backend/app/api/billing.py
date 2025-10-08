@@ -13,10 +13,30 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-user_api_keys= {}
+
+class SessionStore:
+    """Simple in-memory session storage"""
+    def __init__(self):
+        self._store = {}
+    
+    def set(self, session_id: str, api_key: str):
+        self._store[session_id] = api_key
+    
+    def get(self, session_id: str):
+        return self._store.get(session_id)
+    
+    def delete(self, session_id: str):
+        self._store.pop(session_id, None)
+    
+    def has(self, session_id: str):
+        return session_id in self._store
+
+
+user_api_keys = SessionStore()
 
 # Single shared billing service instance to maintain cache
 _billing_service_instance = None
+
 
 def get_billing_service() -> BillingService:
     """Get or create a single shared billing service instance"""
@@ -44,14 +64,14 @@ async def set_api_key(request: SetApiKeyRequest):
         session_id = request.session_id or "default"
         
         # If there was a previous key for this session, invalidate its cache
-        if session_id in user_api_keys:
-            old_key = user_api_keys[session_id]
+        old_key = user_api_keys.get(session_id)
+        if old_key:
             service = get_billing_service()
             service.agent.invalidate_session_cache(old_key)
             logger.info(f"Invalidated cache for old API key in session: {session_id}")
         
         # Store the new API key
-        user_api_keys[session_id] = request.api_key
+        user_api_keys.set(session_id, request.api_key)
         
         logger.info(f"API key set for session: {session_id} (ends with: ...{request.api_key[-4:]})")
         
@@ -76,16 +96,16 @@ async def set_api_key(request: SetApiKeyRequest):
 async def remove_api_key(session_id: str = "default"):
     """Remove the stored API key and invalidate its cache"""
     try:
-        if session_id in user_api_keys:
+        if user_api_keys.has(session_id):
             # Get the key before deleting to invalidate its cache
-            api_key = user_api_keys[session_id]
+            api_key = user_api_keys.get(session_id)
             
             # Invalidate cache for this API key
             service = get_billing_service()
             service.agent.invalidate_session_cache(api_key)
             
             # Remove the key
-            del user_api_keys[session_id]
+            user_api_keys.delete(session_id)
             
             logger.info(f"API key removed for session: {session_id}")
             return {
@@ -108,7 +128,7 @@ async def remove_api_key(session_id: str = "default"):
 @router.get("/api-key-status")
 async def get_api_key_status(session_id: str = "default"):
     """Check if a custom API key is set for this session"""
-    has_custom_key = session_id in user_api_keys
+    has_custom_key = user_api_keys.has(session_id)
     has_env_key = bool(settings.OPENAI_API_KEY)
     
     # Get cache info for debugging
@@ -120,7 +140,7 @@ async def get_api_key_status(session_id: str = "default"):
         "has_env_key": has_env_key,
         "using_custom_key": has_custom_key,
         "session_id": session_id,
-        "cache_info": cache_info  # Optional: for debugging
+        "cache_info": cache_info
     }
 
 
@@ -180,13 +200,12 @@ async def upload_excel_file(
             content = await file.read()
             buffer.write(content)
         
-        # IMPORTANT: Load the file into the agent immediately after upload
+        # Load the file into the agent immediately after upload
         try:
             service.load_file(str(file_path))
             logger.info(f"File uploaded and loaded successfully: {file.filename}")
         except Exception as e:
             logger.error(f"File uploaded but failed to load into agent: {e}")
-            # Still return success since file was saved, but mention the issue
             return FileUploadResponse(
                 success=True,
                 message=f"File uploaded but not loaded into agent: {str(e)}",
@@ -273,7 +292,7 @@ async def delete_file(
         # Delete the file
         file_path.unlink()
         
-        # IMPORTANT: Reload all remaining files into the agent
+        # Reload all remaining files into the agent
         service.agent.clear_loaded_files()
         service._initialize_default_files()
         

@@ -60,10 +60,12 @@ export default function App() {
       if (data.success) {
         await checkApiKeyStatus();
         alert('API key set successfully!');
+      } else {
+        alert(' Failed to set API key: ' + (data.detail || 'Unknown error'));
       }
     } catch (err) {
       console.error('Failed to set API key', err);
-      alert('Failed to set API key');
+      alert(' Failed to set API key');
     }
   };
 
@@ -109,7 +111,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to process query', err);
-      setError('Failed to process query');
+      setError('Failed to process query. Please try again.');
     } finally {
       setLoading(false);
     }

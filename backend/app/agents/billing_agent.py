@@ -65,7 +65,20 @@ class BillingAgent:
             ) from e
     
     def _get_cache_key(self, api_key: Optional[str], file_name: Optional[str]) -> str:
-        """Generate a cache key based on API key and file selection"""
+        """
+        Generate a cache key based on API key and file selection.
+        
+        HOW THIS CREATES SEPARATE SESSIONS:
+        - Each unique API key gets a different key_hash
+        - This means User A (with api_key_A) and User B (with api_key_B) 
+          will have SEPARATE agent executors in the cache
+        - But they all share the same loaded_files (Excel data)
+        
+        Example:
+        - User A with sk-AAA... -> cache key: "abc12345_all_files"
+        - User B with sk-BBB... -> cache key: "def67890_all_files"
+        - Both use the same self.loaded_files dictionary
+        """
         # Create a hash of the API key for the cache key
         if api_key:
             key_hash = hashlib.md5(api_key.encode()).hexdigest()[:8]
@@ -130,6 +143,7 @@ Remember:
             logger.info(f"Loaded Excel file: {file_path} with {len(df)} rows")
             
             # Store only the DataFrame and metadata (NO agent creation here)
+            # This is SHARED across all users
             self.loaded_files[tool_name] = {
                 "file_path": file_path,
                 "sheet_name": sheet_name,
@@ -162,7 +176,7 @@ Provide your query for data analysis."""
     ) -> AgentExecutor:
         """Get cached agent executor or create new one if not exists"""
         
-        # Generate cache key
+        # Generate cache key (unique per API key)
         cache_key = self._get_cache_key(api_key, file_name)
         
         # Check if we have a cached executor
@@ -184,13 +198,13 @@ Provide your query for data analysis."""
             if not files_to_process:
                 raise ValueError(f"No loaded file matches: {file_name}")
         else:
-            # Use all loaded files
+            # Use all loaded files (SHARED data)
             files_to_process = self.loaded_files
         
         # Create pandas agent tools for each file
         tools = []
         for tool_name, file_data in files_to_process.items():
-            # Create pandas agent with the specified LLM
+            # Create pandas agent with the specified LLM (user-specific)
             excel_agent_executor = create_pandas_dataframe_agent(
                 llm=llm,
                 df=file_data["dataframe"],
@@ -228,7 +242,7 @@ Provide your query for data analysis."""
             return_intermediate_steps=True
         )
         
-        # Cache the executor
+        # Cache the executor (user-specific cache)
         self._agent_cache[cache_key] = agent_executor
         logger.info(f"Cached new agent executor with key: {cache_key}")
         
@@ -288,7 +302,7 @@ Provide your query for data analysis."""
                     "tools_used": 0
                 }
             
-            # Get or create cached agent executor
+            # Get or create cached agent executor (user-specific)
             agent_executor = self._get_or_create_agent_executor(llm, file_name, api_key)
             
             # Execute the query (this is the only heavy operation now)
