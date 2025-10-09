@@ -1,0 +1,124 @@
+import boto3
+from botocore.exceptions import ClientError
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+BUCKET_NAME = 'billing-analyzer-files-emerjence'  # Your bucket name
+AWS_REGION = 'us-east-1'  # Your bucket region
+
+def test_s3_connection():
+    """Test all S3 operations your app will use"""
+    
+    print("🔍 Testing S3 Connection...\n")
+    
+    try:
+        # Create S3 client
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION
+        )
+        
+        # Test 1: List bucket (check if we can access it)
+        print("1️⃣ Testing bucket access...")
+        response = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
+        print(f"   ✅ Successfully connected to bucket: {BUCKET_NAME}")
+        print(f"   📁 Current files in bucket: {response.get('KeyCount', 0)}\n")
+        
+        # Test 2: Upload a test file
+        print("2️⃣ Testing file upload...")
+        test_content = b'Hello from Billing Analyzer! This is a test file.'
+        s3_client.put_object(
+            Bucket=BUCKET_NAME,
+            Key='test-upload.txt',
+            Body=test_content
+        )
+        print("   ✅ Successfully uploaded test file: test-upload.txt\n")
+        
+        # Test 3: Download the file
+        print("3️⃣ Testing file download...")
+        obj = s3_client.get_object(Bucket=BUCKET_NAME, Key='test-upload.txt')
+        downloaded_content = obj['Body'].read()
+        assert downloaded_content == test_content
+        print(f"   ✅ Successfully downloaded file")
+        print(f"   📄 Content: {downloaded_content.decode('utf-8')}\n")
+        
+        # Test 4: List files again
+        print("4️⃣ Testing file listing...")
+        response = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
+        if 'Contents' in response:
+            print(f"   ✅ Found {len(response['Contents'])} file(s):")
+            for obj in response['Contents']:
+                print(f"      - {obj['Key']} ({obj['Size']} bytes)")
+        print()
+        
+        # Test 5: Delete the test file
+        print("5️⃣ Testing file deletion...")
+        s3_client.delete_object(Bucket=BUCKET_NAME, Key='test-upload.txt')
+        print("   ✅ Successfully deleted test file\n")
+        
+        # Final check
+        print("6️⃣ Final verification...")
+        response = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
+        print(f"   ✅ Files remaining in bucket: {response.get('KeyCount', 0)}\n")
+        
+        print("=" * 50)
+        print("🎉 ALL TESTS PASSED!")
+        print("=" * 50)
+        print("\n✅ Your S3 configuration is working perfectly!")
+        print("✅ Your app will be able to:")
+        print("   - Upload Excel files")
+        print("   - Download files for processing")
+        print("   - List all files")
+        print("   - Delete files")
+        print("\n🚀 You're ready to deploy!")
+        
+        return True
+        
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        error_message = e.response['Error']['Message']
+        
+        print("=" * 50)
+        print("❌ TEST FAILED!")
+        print("=" * 50)
+        print(f"\n❌ Error Code: {error_code}")
+        print(f"❌ Error Message: {error_message}\n")
+        
+        # Common error solutions
+        if error_code == 'AccessDenied':
+            print("🔧 SOLUTION:")
+            print("   1. Check if you attached the S3 policy to the IAM user")
+            print("   2. Make sure the policy includes your bucket name")
+            print("   3. Wait 1-2 minutes for permissions to propagate")
+        elif error_code == 'NoSuchBucket':
+            print("🔧 SOLUTION:")
+            print("   1. Verify your bucket name is correct")
+            print("   2. Check the bucket region matches AWS_REGION")
+        elif error_code == 'InvalidAccessKeyId':
+            print("🔧 SOLUTION:")
+            print("   1. Double-check your Access Key ID")
+            print("   2. Make sure there are no extra spaces")
+        elif error_code == 'SignatureDoesNotMatch':
+            print("🔧 SOLUTION:")
+            print("   1. Double-check your Secret Access Key")
+            print("   2. Make sure you copied the full key")
+        
+        return False
+    
+    except Exception as e:
+        print(f"❌ Unexpected error: {str(e)}")
+        return False
+
+
+if __name__ == "__main__":
+    print("\n" + "=" * 50)
+    print("  S3 CONNECTION TEST FOR BILLING ANALYZER")
+    print("=" * 50 + "\n")
+    
+    test_s3_connection()
