@@ -19,6 +19,7 @@ starlette
 
 # Logging and monitoring
 structlog
+psutil
 
 # Database (if needed)
 boto3
