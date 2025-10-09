@@ -31,7 +31,7 @@ class BillingService:
             file_stream = self.s3_storage.download_file_to_stream(filename)
             if file_stream:
                 self.agent.load_excel_file(file_stream, filename)
-                logger.info(f"✅ Loaded: {filename}")
+                logger.info(f"Loaded: {filename}")
         except Exception as e:
             logger.error(f"Failed to load {filename}: {e}")
             raise
@@ -107,7 +107,7 @@ class BillingService:
                 raise Exception("Failed to upload to S3")
             
             # Don't load immediately - will load on first query
-            logger.info(f"✅ Uploaded {filename} to S3 (will load on demand)")
+            logger.info(f"Uploaded {filename} to S3 (will load on demand)")
             return f"Excel Agent - {Path(filename).stem}"
             
         except Exception as e:

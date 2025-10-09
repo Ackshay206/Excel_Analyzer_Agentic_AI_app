@@ -21,7 +21,7 @@ def log_memory_usage():
     try:
         process = psutil.Process(os.getpid())
         memory_mb = process.memory_info().rss / 1024 / 1024
-        logger.info(f"💾 Memory usage: {memory_mb:.1f} MB")
+        logger.info(f"Memory usage: {memory_mb:.1f} MB")
         return memory_mb
     except:
         return 0
