@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 import time
 import hashlib
+import io
 
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_react_agent, AgentExecutor
@@ -12,6 +13,7 @@ from langchain.tools import Tool
 from langchain import hub
 
 from app.config import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -127,30 +129,25 @@ Remember:
 3. IMPORTANT: Always apply the tools on the data in the excel files. Do not make assumptions or fabricate data.
 """
 
-    def load_excel_file(self, file_path: str, sheet_name: str = "Billing Invoice (BI) Detail") -> str:
-        """Load an Excel file and store only the DataFrame (no agent creation yet)"""
+    def load_excel_file(self, file_stream: io.BytesIO, filename: str, sheet_name: str = "Billing Invoice (BI) Detail") -> str:
+        """Load an Excel file from a BytesIO stream (S3 download)"""
         try:
-            # Check if file exists
-            if not Path(file_path).exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
-            
             # Generate a tool name based on the file
-            file_name = Path(file_path).stem
+            file_name = Path(filename).stem
             tool_name = f"Excel Agent - {file_name}"
             
-            # Load the Excel file
-            df = pd.read_excel(file_path, sheet_name=sheet_name)
-            logger.info(f"Loaded Excel file: {file_path} with {len(df)} rows")
+            # Load the Excel file from stream
+            df = pd.read_excel(file_stream, sheet_name=sheet_name)
+            logger.info(f"Loaded Excel file: {filename} with {len(df)} rows")
             
             # Store only the DataFrame and metadata (NO agent creation here)
-            # This is SHARED across all users
             self.loaded_files[tool_name] = {
-                "file_path": file_path,
+                "file_path": filename,  # Just the filename now
                 "sheet_name": sheet_name,
                 "dataframe": df,
-                "tool_description": f"""Use this tool to analyze the Excel file: {Path(file_path).name}
-Sheet: {sheet_name}
-Provide your query for data analysis."""
+                "tool_description": f"""Use this tool to analyze the Excel file: {filename}
+    Sheet: {sheet_name}
+    Provide your query for data analysis."""
             }
             
             # Invalidate cache since files changed
@@ -160,7 +157,7 @@ Provide your query for data analysis."""
             return tool_name
             
         except Exception as e:
-            logger.error(f"Error loading Excel file {file_path}: {str(e)}")
+            logger.error(f"Error loading Excel file {filename}: {str(e)}")
             raise
 
     def _invalidate_cache(self):

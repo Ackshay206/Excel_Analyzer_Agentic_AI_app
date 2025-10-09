@@ -181,7 +181,7 @@ async def upload_excel_file(
     file: UploadFile = File(...),
     service: BillingService = Depends(get_billing_service)
 ):
-    """Upload Excel file for analysis"""
+    """Upload Excel file directly to S3"""
     try:
         # Validate file type
         if not file.filename.endswith(('.xlsx', '.xls')):
@@ -190,36 +190,36 @@ async def upload_excel_file(
                 detail="Only Excel files (.xlsx, .xls) are supported"
             )
         
-        # Create data directory if it doesn't exist
-        data_dir = Path(settings.DATA_DIRECTORY)
-        data_dir.mkdir(exist_ok=True, parents=True)
+        # Read file content
+        content = await file.read()
         
-        # Save uploaded file
-        file_path = data_dir / file.filename
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
+        # Check file size
+        if len(content) > settings.MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Max size: {settings.MAX_FILE_SIZE / 1024 / 1024}MB"
+            )
         
-        # Load the file into the agent immediately after upload
+        # Upload to S3 and load into agent
         try:
-            service.load_file(str(file_path))
-            logger.info(f"File uploaded and loaded successfully: {file.filename}")
+            service.load_file(content, file.filename)
+            logger.info(f"File uploaded to S3 and loaded: {file.filename}")
         except Exception as e:
-            logger.error(f"File uploaded but failed to load into agent: {e}")
-            return FileUploadResponse(
-                success=True,
-                message=f"File uploaded but not loaded into agent: {str(e)}",
-                filename=file.filename,
-                file_path=str(file_path)
+            logger.error(f"Failed to process file: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to process file: {str(e)}"
             )
         
         return FileUploadResponse(
             success=True,
-            message="File uploaded and loaded successfully",
+            message="File uploaded to S3 successfully",
             filename=file.filename,
-            file_path=str(file_path)
+            file_path=f"s3://{os.getenv('S3_BUCKET_NAME')}/{file.filename}"
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
         raise HTTPException(
@@ -229,40 +229,17 @@ async def upload_excel_file(
 
 
 @router.get("/files", response_model=FileListResponse)
-async def list_available_files():
-    """List all available Excel files for analysis"""
+async def list_available_files(
+    service: BillingService = Depends(get_billing_service)
+):
+    """List all available Excel files from S3"""
     try:
-        data_dir = Path(settings.DATA_DIRECTORY)
-        
-        if not data_dir.exists():
-            return FileListResponse(
-                success=True,
-                files=[],
-                message="No files directory found"
-            )
-        
-        # Get all Excel files
-        excel_files = []
-        for file_path in data_dir.glob("*.xlsx"):
-            excel_files.append({ 
-                "filename": file_path.name,
-                "path": str(file_path),
-                "size": file_path.stat().st_size,
-                "modified": file_path.stat().st_mtime
-            })
-        
-        for file_path in data_dir.glob("*.xls"):
-            excel_files.append({
-                "filename": file_path.name,
-                "path": str(file_path),
-                "size": file_path.stat().st_size,
-                "modified": file_path.stat().st_mtime
-            })
+        files = service.s3_storage.list_files()
         
         return FileListResponse(
             success=True,
-            files=excel_files,
-            message=f"Found {len(excel_files)} Excel files"
+            files=files,
+            message=f"Found {len(files)} files in S3"
         )
         
     except Exception as e:
@@ -278,28 +255,30 @@ async def delete_file(
     filename: str,
     service: BillingService = Depends(get_billing_service)
 ):
-    """Delete an uploaded Excel file"""
+    """Delete an Excel file from S3"""
     try:
-        data_dir = Path(settings.DATA_DIRECTORY)
-        file_path = data_dir / filename
+        # Delete from S3
+        success = service.s3_storage.delete_file(filename)
         
-        if not file_path.exists():
+        if not success:
             raise HTTPException(
                 status_code=404,
-                detail="File not found"
+                detail="File not found or failed to delete"
             )
         
-        # Delete the file
-        file_path.unlink()
-        
-        # Reload all remaining files into the agent
+        # Reload remaining files
         service.agent.clear_loaded_files()
-        service._initialize_default_files()
+        service._initialize_s3_files()
         
-        logger.info(f"File deleted successfully: {filename}")
+        logger.info(f"File deleted from S3: {filename}")
         
-        return {"success": True, "message": f"File {filename} deleted successfully"}
+        return {
+            "success": True, 
+            "message": f"File {filename} deleted from S3"
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting file: {str(e)}")
         raise HTTPException(

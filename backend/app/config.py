@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     DATA_DIRECTORY: str = "data/excel_files"
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
     ALLOWED_EXTENSIONS: List[str] = [".xlsx", ".xls"]
+
+    # AWS S3 Settings (REQUIRED for production)
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = "billing-analyzer-files-emerjence"
     
     # Agent Settings
     MAX_AGENT_ITERATIONS: int = 10
