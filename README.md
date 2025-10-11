@@ -73,8 +73,10 @@ npm run dev
 
 Navigate to http://localhost:5173 in your browser
 
-#### Step 2: Set API Key 
+#### Step 2: enter username and API Key 
 
+Click Sign In button in Header
+Enter your preferred username and then click enter.
 Click "Set API Key" button in header
 Enter your OpenAI API key (starts with sk-)
 Click "Save"
@@ -103,3 +105,7 @@ For the March file, calculate the average 'line net amount' for each 'agency hie
 Answer: Direct response to your query. 
 Reasoning Process: AI's step-by-step thinking. 
 Execution Time: Processing time. 
+
+#### Step 6: Log out
+
+IMPORTANT: Log out of app before leaving the page.
