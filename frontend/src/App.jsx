@@ -18,20 +18,31 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [apiKeyStatus, setApiKeyStatus] = useState(null);
-  const sessionId = 'default';
+  const [username, setUsername] = useState(localStorage.getItem('username') || '');
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('username'));
 
   useEffect(() => {
-    loadFiles();
-    checkApiKeyStatus();
-  }, []);
+    if (isLoggedIn) {
+      loadFiles();
+      checkApiKeyStatus();
+    }
+  }, [isLoggedIn]);
 
   const checkApiKeyStatus = async () => {
+    if (!username) return;
+    
     try {
-      const response = await fetch(`${API_BASE_URL}/api-key-status?session_id=${sessionId}`);
+      const response = await fetch(`${API_BASE_URL}/api-key-status?username=${username}`);
       const data = await response.json();
       setApiKeyStatus(data);
+      
+      // Update login status based on API response
+      if (data.exists) {
+        setIsLoggedIn(true);
+      }
     } catch (err) {
       console.error('Error checking API key:', err);
+      setError('Failed to check session status');
     }
   };
 
@@ -50,39 +61,61 @@ export default function App() {
   };
 
   const handleSetApiKey = async (apiKey) => {
+    if (!username) {
+      setError('Please enter a username first');
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/set-api-key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: apiKey, session_id: sessionId })
+        body: JSON.stringify({ api_key: apiKey, username: username })
       });
       const data = await response.json();
       if (data.success) {
         await checkApiKeyStatus();
-        alert('API key set successfully!');
+        localStorage.setItem('username', username);
+        setIsLoggedIn(true);
+        alert(data.is_new_user ? 'Signed up successfully!' : 'Signed in successfully!');
       } else {
-        alert(' Failed to set API key: ' + (data.detail || 'Unknown error'));
+        alert('Failed to set API key: ' + (data.detail || 'Unknown error'));
       }
     } catch (err) {
       console.error('Failed to set API key', err);
-      alert(' Failed to set API key');
+      setError('Failed to set API key');
     }
   };
 
   const handleRemoveApiKey = async () => {
     try {
-      await fetch(`${API_BASE_URL}/remove-api-key?session_id=${sessionId}`, {
+      await fetch(`${API_BASE_URL}/remove-api-key?username=${username}`, {
         method: 'DELETE'
       });
       await checkApiKeyStatus();
       alert('API key removed');
     } catch (err) {
       console.error('Failed to remove API key', err);
-      alert('Failed to remove API key');
+      setError('Failed to remove API key');
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('username');
+    setUsername('');
+    setIsLoggedIn(false);
+    setApiKeyStatus(null);
+    setFiles([]);
+    setSelectedFile('');
+    setResult(null);
+  };
+
   const handleSubmit = async () => {
+    if (!isLoggedIn) {
+      setError('Please sign in first');
+      return;
+    }
+
     if (!query.trim()) {
       setError('Please enter a query');
       return;
@@ -99,7 +132,7 @@ export default function App() {
         body: JSON.stringify({
           query: query,
           file_name: selectedFile || null,
-          session_id: sessionId
+          username: username
         })
       });
 
@@ -107,7 +140,7 @@ export default function App() {
       if (data.success) {
         setResult(data);
       } else {
-        setError(data.answer || 'Query failed');
+        setError(data.detail || data.answer || 'Query failed');
       }
     } catch (err) {
       console.error('Failed to process query', err);

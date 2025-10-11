@@ -15,35 +15,74 @@ router = APIRouter()
 
 
 class SessionStore:
-    """Simple in-memory session storage"""
+    """Session storage with username-based sessions"""
     def __init__(self):
         self._store = {}
     
-    def set(self, session_id: str, api_key: str):
-        self._store[session_id] = api_key
+    def set(self, username: str, api_key: str = None):
+        """Store username and optional API key"""
+        if username not in self._store:
+            self._store[username] = {'api_key': api_key, 'is_new_user': True}
+        else:
+            self._store[username]['api_key'] = api_key
+            self._store[username]['is_new_user'] = False
     
-    def get(self, session_id: str):
-        return self._store.get(session_id)
+    def get(self, username: str):
+        """Get session data for username"""
+        return self._store.get(username, {}).get('api_key')
     
-    def delete(self, session_id: str):
-        self._store.pop(session_id, None)
+    def delete(self, username: str):
+        """Remove user session"""
+        self._store.pop(username, None)
     
-    def has(self, session_id: str):
-        return session_id in self._store
+    def has_user(self, username: str):
+        """Check if username exists"""
+        return username in self._store
+    
+    def has_api_key(self, username: str):
+        """Check if username has an API key set"""
+        return username in self._store and self._store[username].get('api_key') is not None
+    
+    def get_user_status(self, username: str):
+        """Get detailed user status"""
+        if not self.has_user(username):
+            return {'exists': False, 'has_api_key': False, 'is_new_user': True}
+        
+        session = self._store[username]
+        return {
+            'exists': True,
+            'has_api_key': session.get('api_key') is not None,
+            'is_new_user': session.get('is_new_user', False)
+        }
 
 
 user_api_keys = SessionStore()
 
-# Single shared billing service instance to maintain cache
-_billing_service_instance = None
+# Dictionary to store billing service instances per user
+_billing_service_instances = {}
 
 
-def get_billing_service() -> BillingService:
-    """Get or create a single shared billing service instance"""
-    global _billing_service_instance
-    if _billing_service_instance is None:
-        _billing_service_instance = BillingService()
-    return _billing_service_instance
+def get_billing_service(username: str = None) -> BillingService:
+    """Get or create a billing service instance for a specific user"""
+    global _billing_service_instances
+    
+    if username is None:
+        # For backwards compatibility and initialization
+        return BillingService()
+    
+    if username not in _billing_service_instances:
+        _billing_service_instances[username] = BillingService(username=username)
+        logger.info(f"Created new billing service instance for user: {username}")
+    
+    return _billing_service_instances[username]
+
+
+def cleanup_user_session(username: str):
+    """Clean up user's billing service instance when they leave"""
+    global _billing_service_instances
+    if username in _billing_service_instances:
+        del _billing_service_instances[username]
+        logger.info(f"Cleaned up billing service instance for user: {username}")
 
 
 @router.post("/set-api-key", response_model=ApiKeyResponse)
@@ -60,26 +99,37 @@ async def set_api_key(request: SetApiKeyRequest):
                 detail="Invalid API key format. OpenAI keys start with 'sk-'"
             )
         
-        # Generate a simple session ID
-        session_id = request.session_id or "default"
+        username = request.session_id
+        if not username:
+            raise HTTPException(
+                status_code=400,
+                detail="Username is required"
+            )
         
-        # If there was a previous key for this session, invalidate its cache
-        old_key = user_api_keys.get(session_id)
+        # Get current user status
+        user_status = user_api_keys.get_user_status(username)
+        
+        # If there was a previous key for this user, invalidate its cache
+        old_key = user_api_keys.get(username)
         if old_key:
             service = get_billing_service()
             service.agent.invalidate_session_cache(old_key)
-            logger.info(f"Invalidated cache for old API key in session: {session_id}")
+            logger.info(f"Invalidated cache for old API key for user: {username}")
         
         # Store the new API key
-        user_api_keys.set(session_id, request.api_key)
+        user_api_keys.set(username, request.api_key)
         
-        logger.info(f"API key set for session: {session_id} (ends with: ...{request.api_key[-4:]})")
+        # Create response message based on user status
+        message = "Signed up and API key set successfully" if user_status['is_new_user'] else "Signed in and API key updated successfully"
+        
+        logger.info(f"API key set for user: {username} (ends with: ...{request.api_key[-4:]})")
         
         return ApiKeyResponse(
             success=True,
-            message="API key set successfully",
-            session_id=session_id,
-            using_custom_key=True
+            message=message,
+            session_id=username,
+            using_custom_key=True,
+            is_new_user=user_status['is_new_user']
         )
         
     except HTTPException:
@@ -126,9 +176,15 @@ async def remove_api_key(session_id: str = "default"):
 
 
 @router.get("/api-key-status")
-async def get_api_key_status(session_id: str = "default"):
-    """Check if a custom API key is set for this session"""
-    has_custom_key = user_api_keys.has(session_id)
+async def get_api_key_status(username: str):
+    """Check status of a user session and their API key"""
+    if not username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username is required"
+        )
+    
+    user_status = user_api_keys.get_user_status(username)
     has_env_key = bool(settings.OPENAI_API_KEY)
     
     # Get cache info for debugging
@@ -136,26 +192,39 @@ async def get_api_key_status(session_id: str = "default"):
     cache_info = service.agent.get_cache_info()
     
     return {
-        "has_custom_key": has_custom_key,
+        "exists": user_status['exists'],
+        "has_api_key": user_status['has_api_key'],
+        "is_new_user": user_status['is_new_user'],
         "has_env_key": has_env_key,
-        "using_custom_key": has_custom_key,
-        "session_id": session_id,
+        "using_custom_key": user_status['has_api_key'],
+        "username": username,
         "cache_info": cache_info
     }
 
 
 @router.post("/query", response_model=BillingQueryResponse)
-async def query_billing_data(
-    request: BillingQueryRequest,
-    service: BillingService = Depends(get_billing_service)
-):
+async def query_billing_data(request: BillingQueryRequest):
     """Query billing data using AI agent"""
     try:
-        logger.info(f"Received billing query: {request.query}")
+        logger.info(f"Received billing query from user {request.username}: {request.query}")
 
-        # Get API KEY from the session storage
-        session_id = request.session_id or "default"
-        api_key = user_api_keys.get(session_id)
+        # Verify user exists and has API key
+        if not user_api_keys.has_user(request.username):
+            raise HTTPException(
+                status_code=401,
+                detail="User not found. Please set up your session first."
+            )
+        
+        # Get API key and service for this user
+        api_key = user_api_keys.get(request.username)
+        if not api_key:
+            raise HTTPException(
+                status_code=401,
+                detail="No API key set for this user. Please set your API key first."
+            )
+        
+        # Get user-specific billing service
+        service = get_billing_service(request.username)
         
         # Process query through the billing service
         result = await service.process_query(request.query, request.file_name, api_key=api_key)
@@ -165,7 +234,8 @@ async def query_billing_data(
             answer=result["answer"],
             reasoning=result.get("reasoning", ""),
             execution_time=result.get("execution_time", 0),
-            using_custom_key=api_key is not None
+            using_custom_key=True,
+            username=request.username
         )
         
     except Exception as e:
@@ -250,38 +320,18 @@ async def list_available_files(
         )
 
 
-@router.delete("/files/{filename}")
-async def delete_file(
-    filename: str,
-    service: BillingService = Depends(get_billing_service)
-):
-    """Delete an Excel file from S3"""
+@router.post("/cleanup-session")
+async def cleanup_session(username: str):
+    """Cleanup user session when they leave the app"""
     try:
-        # Delete from S3
-        success = service.s3_storage.delete_file(filename)
-        
-        if not success:
-            raise HTTPException(
-                status_code=404,
-                detail="File not found or failed to delete"
-            )
-        
-        # Reload remaining files
-        service.agent.clear_loaded_files()
-        service._initialize_s3_files()
-        
-        logger.info(f"File deleted from S3: {filename}")
-        
+        cleanup_user_session(username)
         return {
-            "success": True, 
-            "message": f"File {filename} deleted from S3"
+            "success": True,
+            "message": f"Session cleaned up for user: {username}"
         }
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error deleting file: {str(e)}")
+        logger.error(f"Error cleaning up session: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error deleting file: {str(e)}"
+            detail=f"Error cleaning up session: {str(e)}"
         )
