@@ -67,6 +67,13 @@ body {
   letter-spacing: -0.3px;
 }
 
+.user-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .api-controls {
   display: flex;
   align-items: center;
@@ -91,6 +98,61 @@ body {
 .key-badge.default {
   background: white;
   color: #10b981;
+}
+
+.user-badge {
+  font-size: 0.9rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  background: #d1fae5;
+  color: #065f46;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-badge::before {
+  content: "👤";
+  font-size: 1.1rem;
+}
+
+.btn-logout {
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  padding: 0.65rem 1.5rem;
+  border: 2px solid #dc2626;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+  background: transparent;
+  color: #dc2626;
+}
+
+.btn-logout:hover {
+  background: #dc2626;
+  color: white;
+}
+
+.login-section {
+  max-width: 1400px;
+  margin: 1rem auto 0;
+  display: flex;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 1rem;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.login-section .input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.login-section .btn-save {
+  min-width: 120px;
 }
 
 .api-input-section {
@@ -499,12 +561,26 @@ body {
     text-align: center;
   }
 
-  .api-controls {
+  .user-controls, .api-controls {
     flex-direction: column;
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .user-controls button, .api-controls button {
     width: 100%;
   }
 
-  .api-controls button {
+  .login-section {
+    flex-direction: column;
+    padding: 1rem;
+  }
+
+  .login-section .input {
+    width: 100%;
+  }
+
+  .login-section .btn-save {
     width: 100%;
   }
 

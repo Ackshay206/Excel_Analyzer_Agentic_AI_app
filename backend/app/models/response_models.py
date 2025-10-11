@@ -9,15 +9,16 @@ class BillingQueryResponse(BaseModel):
     reasoning: Optional[str] = Field(None, description="Step-by-step reasoning (optional)")
     execution_time: float = Field(..., description="Time taken to process the query in seconds")
     using_custom_key: bool = Field(False, description="Whether a custom API key was used")
+    username: str = Field(..., description="Username for the session")
 
 
-# New: API Key Response Model
 class ApiKeyResponse(BaseModel):
     """Response model for API key operations"""
     success: bool = Field(..., description="Whether the operation was successful")
     message: str = Field(..., description="Status message")
-    session_id: str = Field(..., description="Session identifier")
+    username: str = Field(..., description="Username for the session")
     using_custom_key: bool = Field(..., description="Whether using a custom key")
+    is_new_user: bool = Field(False, description="Whether this is a new user signup")
 
 class FileUploadResponse(BaseModel):
     """Response model for file uploads"""
