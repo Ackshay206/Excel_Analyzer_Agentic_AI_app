@@ -17,16 +17,15 @@ class BillingService:
         self.agent = BillingAgent()
         self.s3_storage = S3Storage()
         self.username = username
-        self.loaded_files = {}  # Per-user file cache
         logger.info(f"BillingService initialized for user: {username}")
     
     def _ensure_file_loaded(self, filename: str):
         """Load specific file only when needed"""
         tool_name = f"Excel Agent - {Path(filename).stem}"
         
-        # Check in user-specific cache
-        if tool_name in self.loaded_files:
-            logger.info(f"File already in user's cache: {filename}")
+        # Check in agent's loaded_files (where agent expects them)
+        if tool_name in self.agent.loaded_files:
+            logger.info(f"File already in agent cache: {filename}")
             return tool_name
         
         try:
@@ -34,8 +33,8 @@ class BillingService:
             file_stream = self.s3_storage.download_file_to_stream(filename)
             if file_stream:
                 df = pd.read_excel(file_stream, sheet_name="Billing Invoice (BI) Detail")
-                # Store in user-specific cache
-                self.loaded_files[tool_name] = {
+                # Store in agent's loaded_files (not service's)
+                self.agent.loaded_files[tool_name] = {
                     "file_path": filename,
                     "sheet_name": "Billing Invoice (BI) Detail",
                     "dataframe": df,
@@ -49,9 +48,9 @@ class BillingService:
     
     def _unload_files(self):
         """Unload files from memory but keep agent cache"""
-        if self.loaded_files:
-            count = len(self.loaded_files)
-            self.loaded_files.clear()
+        if self.agent.loaded_files:
+            count = len(self.agent.loaded_files)
+            self.agent.loaded_files.clear()
             gc.collect()
             logger.info(f"Unloaded {count} files from memory for user {self.username}")
     
