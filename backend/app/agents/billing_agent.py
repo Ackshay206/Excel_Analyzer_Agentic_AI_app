@@ -122,11 +122,26 @@ Here is how you should structure your reasoning and responses:
 - **Final Answer**:
   The concise, direct answer you provide to the user after integrating
   all relevant information and your reasoning.
+
+SAMPLEE QUERY:
+
+" Find the top 3 agency hierarchies by their average base line item price in the month of july."
+
+Chain of though example :
+
+1. Thought: To find the top 3 agency hierarchies by their average base line item price in July, I need to excel agent tool for July month and then group by agency hierarchy to calculate the average base line item price.
+2. Action: Excel Agent - July
+3. Thought: Now that I have grouped the data by agency hierarchy and calculated the average base line item price, I need to sort the results in descending order and select the top 3.
+4. Action Input: "Group by agency hierarchy, calculate the average base line item price, sort in descending order, and select the top 3."
+5. Observation: [Tool's response]
+6. Thought: I have the top 3 agency hierarchies by their average base line item price for July.
+7. Final Answer: [Your final answer to the user]
  
 Remember:
+1. IMPORTANT : Do not make assumptions or fabricate sample data. Always refer to the actual data in the files.
 1. Think carefully, plan your steps, and then provide the best final answer.
 2. IMPORTANT: Do not modify, transform, or reformat any numerical values in any way. Return the exact raw values as they are found in the data. Do not assume values are in thousands or apply any scaling.
-3. IMPORTANT: Always apply the tools on the data in the excel files. Do not make assumptions or fabricate data.
+3. IMPORTANT: Always apply the tools on the data in the excel files. 
 """
 
     def load_excel_file(self, file_stream: io.BytesIO, filename: str, sheet_name: str = "Billing Invoice (BI) Detail") -> str:
