@@ -20,6 +20,7 @@ class ApiKeyResponse(BaseModel):
     using_custom_key: bool = Field(..., description="Whether using a custom key")
     is_new_user: bool = Field(False, description="Whether this is a new user signup")
 
+
 class FileUploadResponse(BaseModel):
     """Response model for file uploads"""
     success: bool = Field(..., description="Whether the upload was successful")
@@ -47,4 +48,3 @@ class HealthResponse(BaseModel):
     """Health check response model"""
     status: str = Field(..., description="Health status")
     message: str = Field(..., description="Health status message")
-

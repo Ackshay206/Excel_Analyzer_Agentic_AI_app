@@ -20,13 +20,29 @@ export default function App() {
   const [apiKeyStatus, setApiKeyStatus] = useState(null);
   const [username, setUsername] = useState(localStorage.getItem('username') || '');
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('username'));
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && username) {
       loadFiles();
       checkApiKeyStatus();
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, username]);
+
+  // Cleanup on page unload
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (username) {
+        // Send cleanup request (won't wait for response due to browser limitations)
+        navigator.sendBeacon(`${API_BASE_URL}/cleanup-session?username=${username}`, '');
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [username]);
 
   const checkApiKeyStatus = async () => {
     if (!username) return;
@@ -52,12 +68,30 @@ export default function App() {
       const data = await response.json();
       if (data.success) {
         setFiles(data.files);
-        if (data.files.length > 0) setSelectedFile(data.files[0].filename);
+        if (data.files.length > 0 && !selectedFile) {
+          setSelectedFile(data.files[0].filename);
+        }
       }
     } catch (err) {
       console.error('Failed to load files', err);
       setError('Failed to load files');
     }
+  };
+
+  const handleUsernameChange = (newUsername) => {
+    if (!newUsername.trim()) {
+      setError('Username cannot be empty');
+      return;
+    }
+    
+    setUsername(newUsername);
+    localStorage.setItem('username', newUsername);
+    setIsLoggedIn(true);
+    setShowAuthModal(false);
+    setError(null);
+    
+    // Check if user has API key
+    setTimeout(() => checkApiKeyStatus(), 100);
   };
 
   const handleSetApiKey = async (apiKey) => {
@@ -78,6 +112,8 @@ export default function App() {
         localStorage.setItem('username', username);
         setIsLoggedIn(true);
         alert(data.is_new_user ? 'Signed up successfully!' : 'Signed in successfully!');
+        // Load files after successful API key setup
+        await loadFiles();
       } else {
         alert('Failed to set API key: ' + (data.detail || 'Unknown error'));
       }
@@ -100,7 +136,20 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Cleanup backend session first
+    if (username) {
+      try {
+        await fetch(`${API_BASE_URL}/cleanup-session?username=${username}`, {
+          method: 'POST'
+        });
+        logger.info('Session cleaned up on logout');
+      } catch (err) {
+        console.error('Failed to cleanup session:', err);
+      }
+    }
+    
+    // Then clear frontend
     localStorage.removeItem('username');
     setUsername('');
     setIsLoggedIn(false);
@@ -108,6 +157,8 @@ export default function App() {
     setFiles([]);
     setSelectedFile('');
     setResult(null);
+    setQuery('');
+    setShowAuthModal(false);
   };
 
   const handleSubmit = async () => {
@@ -121,6 +172,11 @@ export default function App() {
       return;
     }
 
+    if (!selectedFile) {
+      setError('Please select a file');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -131,7 +187,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: query,
-          file_name: selectedFile || null,
+          file_name: selectedFile,
           username: username
         })
       });
@@ -156,30 +212,43 @@ export default function App() {
         apiKeyStatus={apiKeyStatus}
         onSetApiKey={handleSetApiKey}
         onRemoveApiKey={handleRemoveApiKey}
+        username={username}
+        onUsernameChange={handleUsernameChange}
+        isLoggedIn={isLoggedIn}
+        onLogout={handleLogout}
+        showAuthModal={showAuthModal}
+        setShowAuthModal={setShowAuthModal}
       />
       
       <main className="main-content">
-        <FileManager
-          files={files}
-          onRefresh={loadFiles}
-        />
-        
-        <FileSelector 
-          files={files}
-          selectedFile={selectedFile}
-          onSelectFile={setSelectedFile}
-        />
-        
-        <QueryInput
-          query={query}
-          onQueryChange={setQuery}
-          onSubmit={handleSubmit}
-          loading={loading}
-        />
-        
-        <ErrorMessage error={error} />
-        
-        {result ? <Results result={result} /> : <Instructions />}
+        {isLoggedIn ? (
+          <>
+            <FileManager
+              files={files}
+              onRefresh={loadFiles}
+              username={username}
+            />
+            
+            <FileSelector 
+              files={files}
+              selectedFile={selectedFile}
+              onSelectFile={setSelectedFile}
+            />
+            
+            <QueryInput
+              query={query}
+              onQueryChange={setQuery}
+              onSubmit={handleSubmit}
+              loading={loading}
+            />
+            
+            <ErrorMessage error={error} />
+            
+            {result ? <Results result={result} /> : <Instructions />}
+          </>
+        ) : (
+          <Instructions />
+        )}
       </main>
     </div>
   );

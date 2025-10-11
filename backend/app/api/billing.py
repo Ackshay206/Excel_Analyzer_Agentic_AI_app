@@ -24,16 +24,19 @@ class SessionStore:
         if username not in self._store:
             self._store[username] = {'api_key': api_key, 'is_new_user': True}
         else:
+            # Preserve is_new_user status for existing users
+            is_new = self._store[username].get('is_new_user', False)
             self._store[username]['api_key'] = api_key
-            self._store[username]['is_new_user'] = False
+            self._store[username]['is_new_user'] = is_new
     
     def get(self, username: str):
         """Get session data for username"""
         return self._store.get(username, {}).get('api_key')
     
     def delete(self, username: str):
-        """Remove user session"""
-        self._store.pop(username, None)
+        """Remove user API key but keep session"""
+        if username in self._store:
+            self._store[username]['api_key'] = None
     
     def has_user(self, username: str):
         """Check if username exists"""
@@ -99,7 +102,7 @@ async def set_api_key(request: SetApiKeyRequest):
                 detail="Invalid API key format. OpenAI keys start with 'sk-'"
             )
         
-        username = request.session_id
+        username = request.username
         if not username:
             raise HTTPException(
                 status_code=400,
@@ -112,7 +115,7 @@ async def set_api_key(request: SetApiKeyRequest):
         # If there was a previous key for this user, invalidate its cache
         old_key = user_api_keys.get(username)
         if old_key:
-            service = get_billing_service()
+            service = get_billing_service(username)
             service.agent.invalidate_session_cache(old_key)
             logger.info(f"Invalidated cache for old API key for user: {username}")
         
@@ -127,7 +130,7 @@ async def set_api_key(request: SetApiKeyRequest):
         return ApiKeyResponse(
             success=True,
             message=message,
-            session_id=username,
+            username=username,
             using_custom_key=True,
             is_new_user=user_status['is_new_user']
         )
@@ -143,21 +146,27 @@ async def set_api_key(request: SetApiKeyRequest):
 
 
 @router.delete("/remove-api-key")
-async def remove_api_key(session_id: str = "default"):
+async def remove_api_key(username: str):
     """Remove the stored API key and invalidate its cache"""
     try:
-        if user_api_keys.has(session_id):
+        if not username:
+            raise HTTPException(
+                status_code=400,
+                detail="Username is required"
+            )
+            
+        if user_api_keys.has_api_key(username):
             # Get the key before deleting to invalidate its cache
-            api_key = user_api_keys.get(session_id)
+            api_key = user_api_keys.get(username)
             
             # Invalidate cache for this API key
-            service = get_billing_service()
+            service = get_billing_service(username)
             service.agent.invalidate_session_cache(api_key)
             
             # Remove the key
-            user_api_keys.delete(session_id)
+            user_api_keys.delete(username)
             
-            logger.info(f"API key removed for session: {session_id}")
+            logger.info(f"API key removed for user: {username}")
             return {
                 "success": True,
                 "message": "API key removed. Using default key from environment."
@@ -165,8 +174,10 @@ async def remove_api_key(session_id: str = "default"):
         else:
             return {
                 "success": True,
-                "message": "No custom API key was set for this session."
+                "message": "No custom API key was set for this user."
             }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error removing API key: {str(e)}")
         raise HTTPException(
@@ -238,6 +249,8 @@ async def query_billing_data(request: BillingQueryRequest):
             username=request.username
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing billing query: {str(e)}")
         raise HTTPException(
@@ -249,7 +262,7 @@ async def query_billing_data(request: BillingQueryRequest):
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_excel_file(
     file: UploadFile = File(...),
-    service: BillingService = Depends(get_billing_service)
+    username: str = None
 ):
     """Upload Excel file directly to S3"""
     try:
@@ -270,7 +283,8 @@ async def upload_excel_file(
                 detail=f"File too large. Max size: {settings.MAX_FILE_SIZE / 1024 / 1024}MB"
             )
         
-        # Upload to S3 and load into agent
+        # Upload to S3
+        service = get_billing_service()
         try:
             service.load_file(content, file.filename)
             logger.info(f"File uploaded to S3 and loaded: {file.filename}")
@@ -281,11 +295,17 @@ async def upload_excel_file(
                 detail=f"Failed to process file: {str(e)}"
             )
         
+        # Clear agent cache for the user who uploaded (if username provided)
+        if username:
+            user_service = get_billing_service(username)
+            user_service.agent._invalidate_cache()
+            logger.info(f"Cleared agent cache for user {username} after file upload")
+        
         return FileUploadResponse(
             success=True,
             message="File uploaded to S3 successfully",
             filename=file.filename,
-            file_path=f"s3://{os.getenv('S3_BUCKET_NAME')}/{file.filename}"
+            file_path=f"s3://{settings.S3_BUCKET_NAME}/{file.filename}"
         )
         
     except HTTPException:
@@ -324,11 +344,25 @@ async def list_available_files(
 async def cleanup_session(username: str):
     """Cleanup user session when they leave the app"""
     try:
+        if not username:
+            raise HTTPException(
+                status_code=400,
+                detail="Username is required"
+            )
+        
+        # Get user's service and clear agent cache before cleanup
+        if username in _billing_service_instances:
+            service = _billing_service_instances[username]
+            service.agent._invalidate_cache()
+            logger.info(f"Cleared agent cache for user: {username}")
+        
         cleanup_user_session(username)
         return {
             "success": True,
             "message": f"Session cleaned up for user: {username}"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error cleaning up session: {str(e)}")
         raise HTTPException(

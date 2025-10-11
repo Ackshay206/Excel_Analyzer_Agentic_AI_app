@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { API_BASE_URL } from '../config';
 
-export default function FileManager({ files, onRefresh }) {
+export default function FileManager({ files, onRefresh, username }) {
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
 
@@ -27,7 +27,12 @@ export default function FileManager({ files, onRefresh }) {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const response = await fetch(`${API_BASE_URL}/upload`, {
+      // Add username as query parameter to clear cache for this user
+      const uploadUrl = username 
+        ? `${API_BASE_URL}/upload?username=${username}`
+        : `${API_BASE_URL}/upload`;
+
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         body: formData
       });
@@ -49,21 +54,10 @@ export default function FileManager({ files, onRefresh }) {
     }
   };
 
-  const handleDelete = async (filename) => {
-    if (!window.confirm(`Are you sure you want to delete ${filename}?`)) return;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/files/${filename}`, { method: 'DELETE' });
-      const data = await response.json();
-      if (data.success) {
-        alert('File deleted successfully!');
-        await onRefresh();
-      } else {
-        alert('Delete failed: ' + (data.detail || 'Unknown error'));
-      }
-    } catch (err) {
-      alert('Delete failed: ' + err.message);
-    }
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 KB';
+    const kb = bytes / 1024;
+    return kb < 1024 ? `${kb.toFixed(2)} KB` : `${(kb / 1024).toFixed(2)} MB`;
   };
 
   return (
@@ -87,9 +81,8 @@ export default function FileManager({ files, onRefresh }) {
               <div key={file.filename} className="file-item">
                 <div className="file-info">
                   <span className="file-name">{file.filename}</span>
-                  <span className="file-size">{(file.size / 1024).toFixed(2)} KB</span>
+                  <span className="file-size">{formatFileSize(file.size)}</span>
                 </div>
-                <button onClick={() => handleDelete(file.filename)} className="btn-delete-file">Delete</button>
               </div>
             ))}
           </div>

@@ -48,13 +48,12 @@ class BillingService:
             raise
     
     def _unload_files(self):
-        """Unload files from memory to free up RAM"""
-        if self.agent.loaded_files:
-            count = len(self.agent.loaded_files)
-            self.agent.loaded_files.clear()
-            self.agent._agent_cache.clear()
-            gc.collect()  # Force garbage collection
-            logger.info(f"Unloaded {count} files from memory")
+        """Unload files from memory but keep agent cache"""
+        if self.loaded_files:
+            count = len(self.loaded_files)
+            self.loaded_files.clear()
+            gc.collect()
+            logger.info(f"Unloaded {count} files from memory for user {self.username}")
     
     async def process_query(
         self, 
@@ -62,7 +61,7 @@ class BillingService:
         file_name: Optional[str] = None, 
         api_key: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Process query with single file loading"""
+        """Process query with persistent cache (NOT cleared after query)"""
         try:
             logger.info(f"Processing query for user {self.username}: {query[:50]}...")
             
@@ -87,17 +86,17 @@ class BillingService:
                     "tools_used": 0
                 }
             
-            # Process query
+            # Process query - agent cache will persist
             result = await self.agent.query(query, file_name, api_key=api_key)
             
-            # Unload files after query to free memory for next request
+            # Clear loaded files but keep agent cache
             self._unload_files()
+            logger.info(f"Query completed for user {self.username}, files cleared, cache preserved")
             
             return result
             
         except Exception as e:
             logger.error(f"Query error: {str(e)}")
-            # Clean up on error
             self._unload_files()
             return {
                 "answer": f"Error: {str(e)}",
@@ -127,6 +126,7 @@ class BillingService:
         """Get info about loaded files"""
         return self.agent.get_loaded_files_info()
     
-    def clear_files(self):
-        """Clear all loaded files"""
-        self._unload_files()
+    def clear_cache(self):
+        """Clear agent cache (called on logout/cleanup)"""
+        self.agent._invalidate_cache()
+        logger.info(f"Cleared agent cache for user {self.username}")

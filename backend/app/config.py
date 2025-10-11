@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # CORS Settings
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173/","http://localhost:5173", "https://excel-analyzer-agentic-ai-app.vercel.app"]
+    ALLOWED_ORIGINS: List[str] = ["https://excel-analyzer-agentic-ai-app.vercel.app","http://localhost:5173/","http://localhost:5173", "https://excel-analyzer-agentic-ai-app.vercel.app/"]
     
     # OpenAI Settings - FIXED: Use underscore instead of hyphen
     OPENAI_API_KEY: Optional[str] =None
